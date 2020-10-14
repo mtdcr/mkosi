@@ -2136,18 +2136,18 @@ def install_debian_or_ubuntu(args: CommandLineArguments,
     if args.distribution == Distribution.ubuntu and args.bootable:
         repos.add('universe')
 
-    cmdline = ["debootstrap", "--variant=minbase", "--merged-usr", f"--components={','.join(repos)}"]
+    bootstrap = ["debootstrap", "--variant=minbase", "--merged-usr", f"--components={','.join(repos)}"]
 
     if args.architecture is not None:
         debarch = DEBIAN_ARCHITECTURES.get(args.architecture)
-        cmdline += [f"--arch={debarch}"]
+        bootstrap.append(f"--arch={debarch}")
 
     # Let's use --no-check-valid-until only if debootstrap knows it
     if debootstrap_knows_arg("--no-check-valid-until"):
-        cmdline.append("--no-check-valid-until")
+        bootstrap.append("--no-check-valid-until")
 
-    cmdline += [args.release, root, mirror]
-    run(cmdline)
+    bootstrap += [args.release, root, mirror]
+    run(bootstrap)
 
     # Install extra packages via the secondary APT run, because it is smarter and can deal better with any
     # conflicts. dbus and libpam-systemd are optional dependencies for systemd in debian so we include them
