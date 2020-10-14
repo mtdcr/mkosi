@@ -2126,6 +2126,27 @@ def debootstrap_knows_arg(arg: str) -> bool:
     return bytes("invalid option", "UTF-8") not in run(["debootstrap", arg], stdout=PIPE, check=False).stdout
 
 
+def bootstrap_is_compatible(arg: str) -> bool:
+    if arg == "mmdebstrap":
+        # Need at least version 0.7.0 for '--skip check/empty' option
+        output = run([arg, "--version"], stdout=PIPE, check=False).stdout
+        lines = output.splitlines()
+        if not lines:
+            return False
+
+        tokens = lines[0].split()
+        if len(tokens) < 2:
+            return False
+        version = tokens[1]
+
+        try:
+            return tuple(map(int, (version.split(b".")))) >= (0, 7, 0)
+        except ValueError:
+            return False
+
+    return True
+
+
 def install_debian_or_ubuntu(args: CommandLineArguments,
                              root: str,
                              *,
@@ -2136,15 +2157,25 @@ def install_debian_or_ubuntu(args: CommandLineArguments,
     if args.distribution == Distribution.ubuntu and args.bootable:
         repos.add('universe')
 
-    bootstrap = ["debootstrap", "--variant=minbase", "--merged-usr", f"--components={','.join(repos)}"]
+    for f in ("mmdebstrap", "debootstrap"):
+        if shutil.which(f) and bootstrap_is_compatible(f):
+            bootstrap = [f]
+            break
+    else:
+        die("Neither mmdebstrap (>= 0.7.0) nor debootstrap was found in PATH.")
+
+    bootstrap += ["--variant=minbase", "--merged-usr", f"--components={','.join(repos)}"]
 
     if args.architecture is not None:
         debarch = DEBIAN_ARCHITECTURES.get(args.architecture)
         bootstrap.append(f"--arch={debarch}")
 
     # Let's use --no-check-valid-until only if debootstrap knows it
-    if debootstrap_knows_arg("--no-check-valid-until"):
+    if bootstrap[0] == "debootstrap" and debootstrap_knows_arg("--no-check-valid-until"):
         bootstrap.append("--no-check-valid-until")
+
+    if bootstrap[0] == "mmdebstrap":
+        bootstrap += ["--skip", "check/empty"]
 
     bootstrap += [args.release, root, mirror]
     run(bootstrap)
