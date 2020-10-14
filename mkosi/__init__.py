@@ -2164,6 +2164,12 @@ def install_debian_or_ubuntu(args: CommandLineArguments,
     else:
         die("Neither mmdebstrap (>= 0.7.0) nor debootstrap was found in PATH.")
 
+    apt_conf = {
+        "Acquire::Check-Valid-Until": "false",
+        "APT::Get::Assume-Yes": "true",
+        "APT::Install-Recommends": "false",
+    }
+
     bootstrap += ["--variant=minbase", "--merged-usr", f"--components={','.join(repos)}"]
 
     if args.architecture is not None:
@@ -2173,12 +2179,6 @@ def install_debian_or_ubuntu(args: CommandLineArguments,
     # Let's use --no-check-valid-until only if debootstrap knows it
     if bootstrap[0] == "debootstrap" and debootstrap_knows_arg("--no-check-valid-until"):
         bootstrap.append("--no-check-valid-until")
-
-    if bootstrap[0] == "mmdebstrap":
-        bootstrap += ["--skip", "check/empty"]
-
-    bootstrap += [args.release, root, mirror]
-    run(bootstrap)
 
     # Install extra packages via the secondary APT run, because it is smarter and can deal better with any
     # conflicts. dbus and libpam-systemd are optional dependencies for systemd in debian so we include them
@@ -2205,6 +2205,14 @@ def install_debian_or_ubuntu(args: CommandLineArguments,
 
         if args.output_format == OutputFormat.gpt_btrfs:
             extra_packages.add("btrfs-progs")
+
+    if bootstrap[0] == "mmdebstrap":
+        bootstrap += ["--skip", "check/empty"]
+        bootstrap += [f"--aptopt='{k} \"{v}\"'" for k, v in apt_conf.items()]
+        bootstrap += [f"--include={','.join(extra_packages)}"]
+
+    bootstrap += [args.release, root, mirror]
+    run(bootstrap)
 
     # Debian policy is to start daemons by default. The policy-rc.d script can be used choose which ones to
     # start. Let's install one that denies all daemon startups.
@@ -2250,7 +2258,8 @@ def install_debian_or_ubuntu(args: CommandLineArguments,
             with open(os.path.join(root, "etc/os-release"), 'a') as f:
                 f.write("BUILD_ID=unstable\n")
 
-    run_workspace_command(args, root, cmdline, network=True, env=env)
+    if bootstrap[0] == "debootstrap":
+        run_workspace_command(args, root, cmdline, network=True, env=env)
     os.unlink(policyrcd)
     # Debian still has pam_securetty module enabled
     disable_pam_securetty(root)
